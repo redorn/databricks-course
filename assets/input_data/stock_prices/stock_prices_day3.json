@@ -1,0 +1,6 @@
+{"stock_id":"AAPL","trading_date":"2025-02-12","price":233.5,"status":"ACTIVE"}
+{"stock_id":"GOOGL","trading_date":"2025-02-12","price":2805.0,"status":"ACTIVE"}
+{"stock_id":"MSFT","trading_date":"2025-02-12","price":335.0,"status":"ACTIVE"}
+{"stock_id":"AMZN","trading_date":"2025-02-12","price":3520.0,"status":"ACTIVE"}
+{"stock_id":"META","trading_date":"2025-02-12","price":405.0,"status":"ACTIVE"}
+{"stock_id":"TSLA","trading_date":"2025-02-12","price":null,"status":"DELISTED"}
