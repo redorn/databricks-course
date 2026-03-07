@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "io_lakehouse"
+version = "0.1.0"
+description = "IO Lakehouse – shared ingestion utilities for Databricks"
+requires-python = ">=3.9"
+
+[project.scripts]
+io-lakehouse-ingest = "io_lakehouse.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["io_lakehouse*"]

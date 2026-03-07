@@ -1,0 +1,15 @@
+# Terraform secrets – never commit
+terraform/terraform.tfvars
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/**/.terraform/
+
+# Python build artifacts
+code/src/dist/
+code/src/*.egg-info/
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
