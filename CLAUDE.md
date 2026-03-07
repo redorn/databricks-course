@@ -97,13 +97,22 @@ assets/input_data/               # Sample landing-zone datasets for local dev/de
 | Landing | `{catalog}.landing`  | Terraform (external tables) + setup job    |
 | Raw     | `{catalog}.raw`      | DLT pipeline (streaming) or batch job (MERGE INTO) |
 
+### Compute model
+
+Both the batch job and the DLT pipeline run on **serverless compute** — no cluster configuration needed.
+
+- Job: no `new_cluster` block; `environment {}` + `environment_key` links task to wheel
+- DLT: `serverless = true`; `environment { dependencies = [...] }` installs the wheel
+- Wheel is stored in UC Volume (`/Volumes/{catalog}/artifacts/libs/`) — **not DBFS** (deprecated)
+- `databricks_file` (not `databricks_dbfs_file`) uploads to the volume
+
 ### Batch job flow
 
 ```
 Job parameter overrides (catalog, s3_landing_path, source_filter, …)
        │
        ▼
-Task 1 – setup (python_wheel_task)
+Task 1 – setup_and_ingest (python_wheel_task, serverless)
   if run_setup=true → CREATE SCHEMA + CREATE EXTERNAL TABLE
   run_ingestion():
     spark.read(format) from S3 landing

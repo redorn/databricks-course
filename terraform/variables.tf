@@ -24,7 +24,7 @@ variable "catalog" {
 }
 
 variable "s3_landing_path" {
-  description = "S3 root path of the landing zone (no trailing slash), e.g. s3://io-lakehouse-landing/raw"
+  description = "S3 root path of the landing zone (no trailing slash), e.g. s3://bucket/landing"
   type        = string
 }
 
@@ -41,19 +41,7 @@ variable "landing_schema" {
 }
 
 variable "spark_version" {
-  description = "Databricks Runtime version"
+  description = "Databricks Runtime version (used by future classic tasks if needed)"
   type        = string
   default     = "15.4.x-scala2.12"
-}
-
-variable "node_type_id" {
-  description = "EC2 instance type for job and pipeline clusters"
-  type        = string
-  default     = "i3.xlarge"
-}
-
-variable "max_workers" {
-  description = "Maximum autoscale workers for the DLT pipeline cluster"
-  type        = number
-  default     = 8
 }

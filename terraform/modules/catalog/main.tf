@@ -53,6 +53,29 @@ locals {
 }
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
+# An "artifacts" schema hosts the UC volume for CI/CD wheel uploads.
+
+resource "databricks_schema" "artifacts" {
+  catalog_name = var.catalog
+  name         = "artifacts"
+  comment      = "CI/CD deployment artifacts (Python wheels, etc.)"
+  properties = {
+    environment = var.environment
+    layer       = "artifacts"
+  }
+}
+
+# Managed volume that holds Python wheels uploaded during CI/CD.
+# Serverless jobs and DLT pipelines install the wheel from here.
+resource "databricks_volume" "libs" {
+  catalog_name = var.catalog
+  schema_name  = databricks_schema.artifacts.name
+  name         = "libs"
+  volume_type  = "MANAGED"
+  comment      = "Python wheel artifacts for io-lakehouse pipelines"
+
+  depends_on = [databricks_schema.artifacts]
+}
 
 resource "databricks_schema" "landing" {
   catalog_name = var.catalog

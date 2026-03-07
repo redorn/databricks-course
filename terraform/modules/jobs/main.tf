@@ -1,11 +1,13 @@
 locals {
   wheel_src_dir = "${path.module}/../../../code/src"
-  wheel_path    = "${local.wheel_src_dir}/dist/io_lakehouse-0.1.0-py3-none-any.whl"
-  dbfs_wheel    = "dbfs:/FileStore/io-lakehouse/wheels/io_lakehouse-0.1.0-py3-none-any.whl"
+  wheel_version = "0.1.0"
+  wheel_file    = "io_lakehouse-${local.wheel_version}-py3-none-any.whl"
+  wheel_local   = "${local.wheel_src_dir}/dist/${local.wheel_file}"
+  wheel_remote  = "${var.wheel_volume_path}/${local.wheel_file}"
 }
 
 # ── Build the Python wheel locally ────────────────────────────────────────────
-# Triggers a rebuild whenever any source file changes.
+# Triggers a rebuild whenever any source Python file changes.
 resource "null_resource" "build_wheel" {
   triggers = {
     src_hash = sha256(join("||", [
@@ -20,14 +22,16 @@ resource "null_resource" "build_wheel" {
   }
 }
 
-# ── Upload wheel to DBFS ──────────────────────────────────────────────────────
-resource "databricks_dbfs_file" "wheel" {
+# ── Upload wheel to Unity Catalog Volume ──────────────────────────────────────
+# Uses databricks_file (not deprecated databricks_dbfs_file).
+# Serverless compute can only read from /Volumes/ and /Workspace/ – not DBFS.
+resource "databricks_file" "wheel" {
   depends_on = [null_resource.build_wheel]
-  source     = local.wheel_path
-  path       = local.dbfs_wheel
+  source     = local.wheel_local
+  path       = local.wheel_remote
 }
 
-# ── Parameterized ingestion job ───────────────────────────────────────────────
+# ── Parameterized ingestion job (serverless) ──────────────────────────────────
 resource "databricks_job" "raw_ingestion" {
   name = "io-lakehouse-raw-ingestion-${var.environment}"
 
@@ -50,29 +54,35 @@ resource "databricks_job" "raw_ingestion" {
   }
   parameter {
     name    = "source_filter"
-    default = ""   # empty = process all source systems
+    default = ""   # empty = all source systems
   }
   parameter {
     name    = "entity_filter"
-    default = ""   # empty = process all entities
+    default = ""   # empty = all entities
   }
   parameter {
     name    = "run_setup"
     default = "false"   # set "true" on first run per environment
   }
 
-  # ── Task 1: Setup – create schemas and external landing tables ───────────────
-  task {
-    task_key = "setup"
-
-    new_cluster {
-      spark_version = var.spark_version
-      node_type_id  = var.node_type_id
-      num_workers   = 1
-      spark_conf = {
-        "spark.databricks.delta.preview.enabled" = "true"
-      }
+  # ── Serverless environment: installs the wheel before the task runs ─────────
+  # For serverless compute, libraries are declared here (NOT in task.libraries).
+  environment {
+    environment_key = "default"
+    spec {
+      client = "1"
+      dependencies = [
+        # Wheel is read from the UC volume uploaded above
+        databricks_file.wheel.path,
+      ]
     }
+  }
+
+  # ── Task 1: Setup + batch ingestion (python_wheel_task, serverless) ─────────
+  task {
+    task_key        = "setup_and_ingest"
+    environment_key = "default"   # links to the environment block above
+    # No new_cluster / existing_cluster_id / job_cluster_key → serverless compute
 
     python_wheel_task {
       package_name = "io_lakehouse"
@@ -88,10 +98,6 @@ resource "databricks_job" "raw_ingestion" {
         run-setup         = "{{job.parameters.run_setup}}"
       }
     }
-
-    library {
-      whl = databricks_dbfs_file.wheel.dbfs_path
-    }
   }
 
   # ── Task 2: Trigger DLT pipeline ─────────────────────────────────────────────
@@ -99,16 +105,14 @@ resource "databricks_job" "raw_ingestion" {
     task_key = "run_pipeline"
 
     depends_on {
-      task_key = "setup"
+      task_key = "setup_and_ingest"
     }
 
     pipeline_task {
-      pipeline_id        = var.pipeline_id
-      full_refresh       = false
+      pipeline_id  = var.pipeline_id
+      full_refresh = false
     }
   }
-
-  # ── Job-level compute for the pipeline task (uses pipeline's own cluster) ───
 
   tags = {
     environment = var.environment

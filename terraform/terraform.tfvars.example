@@ -8,8 +8,6 @@ catalog          = "io_lakehouse_dev"
 s3_landing_path  = "s3://io-lakehouse-landing-dev/raw"
 
 # Optionals (defaults shown)
-# raw_schema    = "raw"
+# raw_schema     = "raw"
 # landing_schema = "landing"
 # spark_version  = "15.4.x-scala2.12"
-# node_type_id   = "i3.xlarge"
-# max_workers    = 8
