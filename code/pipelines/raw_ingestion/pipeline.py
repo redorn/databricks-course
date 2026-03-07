@@ -35,10 +35,18 @@ _active = [
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _ensure_scheme(path: str) -> str:
+    """Auto Loader cloudFiles requires a URI scheme.  UC Volume paths
+    (/Volumes/...) need the ``dbfs:`` prefix; S3 paths already have one."""
+    if path.startswith("/Volumes"):
+        return f"dbfs:{path}"
+    return path
+
+
 def _autoloader_opts(cfg: EntityConfig) -> dict:
     opts = {
         "cloudFiles.format":            cfg.file_format,
-        "cloudFiles.schemaLocation":    cfg.schema_location(S3_LANDING_PATH),
+        "cloudFiles.schemaLocation":    _ensure_scheme(cfg.schema_location(S3_LANDING_PATH)),
         "cloudFiles.inferColumnTypes":  "true",
         "cloudFiles.schemaEvolutionMode": "addNewColumns",
         "cloudFiles.useNotifications":  "false",   # S3 directory-listing mode
@@ -72,8 +80,12 @@ def register_landing(cfg: EntityConfig):
             spark.readStream
             .format("cloudFiles")
             .options(**_autoloader_opts(cfg))
-            .load(cfg.landing_path(S3_LANDING_PATH))
+            .load(_ensure_scheme(cfg.landing_path(S3_LANDING_PATH)))
         )
+        # Rename auto-generated columns for headerless CSVs
+        if cfg.columns and not cfg.header:
+            for i, col_name in enumerate(cfg.columns):
+                stream = stream.withColumnRenamed(f"_c{i}", col_name)
         if cfg.file_format == "binaryFile":
             return (
                 stream

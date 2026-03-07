@@ -1,3 +1,11 @@
+terraform {
+  required_providers {
+    databricks = {
+      source = "databricks/databricks"
+    }
+  }
+}
+
 # Upload the DLT pipeline Python source file to the Databricks workspace.
 resource "databricks_workspace_file" "pipeline" {
   path   = "/Shared/io-lakehouse/${var.environment}/raw_ingestion_pipeline.py"
@@ -8,7 +16,7 @@ resource "databricks_pipeline" "raw_ingestion" {
   name       = "io-lakehouse-raw-ingestion-${var.environment}"
   serverless = true        # serverless DLT — no cluster block needed
   catalog    = var.catalog
-  target     = var.raw_schema
+  target     = "${var.raw_schema}_dlt"
 
   # Configuration keys read by pipeline.py via spark.conf.get(...)
   configuration = {

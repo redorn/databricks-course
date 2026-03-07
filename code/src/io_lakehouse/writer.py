@@ -10,6 +10,8 @@ import logging
 from typing import Dict, Any
 
 from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
 from delta.tables import DeltaTable
 
 from io_lakehouse.entity_config import EntityConfig
@@ -42,6 +44,13 @@ def upsert_to_raw(
     merge_cond = " AND ".join(
         f"target.`{k}` = source.`{k}`" for k in cfg.primary_keys
     )
+
+    # ── Deduplicate source: keep latest record per primary key ────────────────
+    w = Window.partitionBy(*[F.col(k) for k in cfg.primary_keys]) \
+              .orderBy(F.col(cfg.sequence_by).desc())
+    df = df.withColumn("_rn", F.row_number().over(w)) \
+           .filter("_rn = 1") \
+           .drop("_rn")
 
     # ── Create on first run ───────────────────────────────────────────────────
     if not spark.catalog.tableExists(plain_fqn):

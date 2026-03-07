@@ -40,6 +40,12 @@ variable "landing_schema" {
   default     = "landing"
 }
 
+variable "metastore_storage_root" {
+  description = "Databricks-managed S3 storage root for catalog creation (from external-locations list)"
+  type        = string
+  default     = "s3://dbstorage-prod-kawkq/uc/992abfcb-136e-439e-b59e-270d06810f0c/fe88ac04-9f55-473a-b131-d5507d79eeb3"
+}
+
 variable "spark_version" {
   description = "Databricks Runtime version (used by future classic tasks if needed)"
   type        = string

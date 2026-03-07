@@ -1,61 +1,23 @@
-locals {
-  base = trimsuffix(var.s3_landing_path, "/")
-
-  # External landing tables: key = table name, value = config
-  landing_tables = {
-    "gizmobox_customers" = {
-      format   = "JSON"
-      location = "${local.base}/gizmobox/customers/"
-      options  = {}
-    }
-    "gizmobox_addresses" = {
-      format   = "CSV"
-      location = "${local.base}/gizmobox/addresses/"
-      # TSV: tab separator + header
-      options = { sep = "\\t", header = "true" }
-    }
-    "gizmobox_orders" = {
-      format   = "JSON"
-      location = "${local.base}/gizmobox/orders/"
-      options  = {}
-    }
-    "gizmobox_payments" = {
-      format   = "CSV"
-      location = "${local.base}/gizmobox/payments/"
-      options  = { header = "true" }
-    }
-    "circuitbox_customers" = {
-      format   = "JSON"
-      location = "${local.base}/circuitbox/customers/"
-      options  = {}
-    }
-    "circuitbox_addresses" = {
-      format   = "CSV"
-      location = "${local.base}/circuitbox/addresses/"
-      options  = { header = "true" }
-    }
-    "circuitbox_orders" = {
-      format   = "JSON"
-      location = "${local.base}/circuitbox/orders/"
-      options  = {}
-    }
-    "market_stock_prices" = {
-      format   = "JSON"
-      location = "${local.base}/stock_prices/"
-      options  = {}
-    }
-    "market_top_tech_companies" = {
-      format   = "CSV"
-      location = "${local.base}/top_tech_companies/"
-      options  = { header = "true" }
+terraform {
+  required_providers {
+    databricks = {
+      source = "databricks/databricks"
     }
   }
+}
+
+# Catalog is pre-created via SQL (CREATE CATALOG IF NOT EXISTS) because
+# Databricks-managed default storage does not allow catalog creation via the
+# Terraform resource or REST API. We reference it here as a data source.
+data "databricks_catalog" "this" {
+  name = var.catalog
 }
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 # An "artifacts" schema hosts the UC volume for CI/CD wheel uploads.
 
 resource "databricks_schema" "artifacts" {
+  depends_on   = [data.databricks_catalog.this]
   catalog_name = var.catalog
   name         = "artifacts"
   comment      = "CI/CD deployment artifacts (Python wheels, etc.)"
@@ -78,49 +40,54 @@ resource "databricks_volume" "libs" {
 }
 
 resource "databricks_schema" "landing" {
+  depends_on   = [data.databricks_catalog.this]
   catalog_name = var.catalog
   name         = var.landing_schema
-  comment      = "External tables on the S3 landing zone (io-lakehouse)"
+  comment      = "Landing zone for raw source files (io-lakehouse)"
   properties = {
     environment = var.environment
     layer       = "landing"
   }
 }
 
+# Managed volume that holds raw source files (JSON/CSV/TSV).
+# Upload test data here; the ingestion job reads from this volume path.
+resource "databricks_volume" "files" {
+  catalog_name = var.catalog
+  schema_name  = databricks_schema.landing.name
+  name         = "files"
+  volume_type  = "MANAGED"
+  comment      = "Raw source files for ingestion (replaces S3 landing bucket)"
+
+  depends_on = [databricks_schema.landing]
+}
+
 resource "databricks_schema" "raw" {
+  depends_on   = [data.databricks_catalog.this]
   catalog_name = var.catalog
   name         = var.raw_schema
-  comment      = "Raw Delta tables – upserted from landing (io-lakehouse)"
+  comment      = "Raw Delta tables – batch ingestion (io-lakehouse)"
   properties = {
     environment = var.environment
     layer       = "raw"
   }
 }
 
-# ── External landing tables ───────────────────────────────────────────────────
-# Table properties include format options (header, sep).
-# These propagate to the Spark reader when tables are queried via Unity Catalog.
-# If a table needs complex OPTIONS not supported here, run the job with
-# --run-setup true to create it via Spark SQL (idempotent).
-
-resource "databricks_sql_table" "landing" {
-  for_each = local.landing_tables
-
-  catalog_name       = var.catalog
-  schema_name        = var.landing_schema
-  name               = each.key
-  table_type         = "EXTERNAL"
-  data_source_format = each.value.format
-  storage_location   = each.value.location
-  comment            = "Landing external table: ${each.key}"
-
-  properties = merge(
-    each.value.options,
-    {
-      environment = var.environment
-      layer       = "landing"
-    }
-  )
-
-  depends_on = [databricks_schema.landing]
+resource "databricks_schema" "raw_dlt" {
+  depends_on   = [data.databricks_catalog.this]
+  catalog_name = var.catalog
+  name         = "${var.raw_schema}_dlt"
+  comment      = "Raw Delta tables – DLT pipeline ingestion (io-lakehouse)"
+  properties = {
+    environment = var.environment
+    layer       = "raw_dlt"
+  }
 }
+
+# External landing tables are not managed here.
+# Databricks recommends using your own S3 bucket (registered as a UC External
+# Location) for the landing zone. Databricks-managed storage is reserved for
+# managed Delta tables (raw, silver, gold layers).
+# In production: add databricks_storage_credential + databricks_external_location
+# pointing to your own bucket, then add databricks_sql_table here.
+# For this demo: the ingestion job reads S3 paths directly via spark.read.

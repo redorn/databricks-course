@@ -1,11 +1,12 @@
 module "catalog" {
   source = "./modules/catalog"
 
-  catalog         = var.catalog
-  landing_schema  = var.landing_schema
-  raw_schema      = var.raw_schema
-  s3_landing_path = var.s3_landing_path
-  environment     = var.environment
+  catalog                = var.catalog
+  landing_schema         = var.landing_schema
+  raw_schema             = var.raw_schema
+  s3_landing_path        = var.s3_landing_path
+  environment            = var.environment
+  metastore_storage_root = var.metastore_storage_root
 }
 
 module "pipeline" {

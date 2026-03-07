@@ -37,6 +37,7 @@ class EntityConfig:
     header: bool = True               # Whether file has a header row
     multiline: bool = False           # True for multi-line JSON records
     path_suffix: Optional[str] = None # Override sub-path under S3 landing root
+    columns: Optional[List[str]] = None  # Column names for headerless CSVs
 
     # ── Derived names ─────────────────────────────────────────────────────────
     @property
@@ -86,16 +87,13 @@ ENTITY_CONFIGS: List[EntityConfig] = [
         source="gizmobox",
         entity="payments",
         file_format="csv",
+        header=False,
         primary_keys=["payment_id"],
         sequence_by="payment_timestamp",
+        columns=["payment_id", "order_id", "payment_timestamp", "amount", "payment_method"],
     ),
-    EntityConfig(
-        source="gizmobox",
-        entity="memberships",
-        file_format="binaryFile",    # PNG images stored as binary
-        primary_keys=["path"],
-        sequence_by="modificationTime",
-    ),
+    # gizmobox/memberships – skipped for now (binary PNG data not yet uploaded)
+    # gizmobox/refunds    – skipped (Azure SQL via JDBC, ingested separately)
 
     # ── CIRCUITBOX ────────────────────────────────────────────────────────────
     EntityConfig(

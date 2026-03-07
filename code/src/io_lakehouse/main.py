@@ -41,16 +41,16 @@ logging.basicConfig(
 
 def _parse_args():
     p = argparse.ArgumentParser(description="IO Lakehouse batch ingestion")
-    p.add_argument("--catalog",           required=True,  help="Unity Catalog name")
-    p.add_argument("--s3-landing-path",   required=True,  dest="s3_landing_path",
-                   help="S3 root of the landing zone (e.g. s3://bucket/landing)")
-    p.add_argument("--raw-schema",        default="raw",     dest="raw_schema")
-    p.add_argument("--landing-schema",    default="landing", dest="landing_schema")
-    p.add_argument("--source-filter",     default="",        dest="source_filter",
+    p.add_argument("--catalog",            required=True,  help="Unity Catalog name")
+    p.add_argument("--s3_landing_path",   required=True,
+                   help="Landing zone root path (S3 or UC Volume)")
+    p.add_argument("--raw_schema",        default="raw")
+    p.add_argument("--landing_schema",    default="landing")
+    p.add_argument("--source_filter",     default="",
                    help="Restrict to a single source system (empty = all)")
-    p.add_argument("--entity-filter",     default="",        dest="entity_filter",
+    p.add_argument("--entity_filter",     default="",
                    help="Restrict to a single entity (empty = all)")
-    p.add_argument("--run-setup",         default="false",   dest="run_setup",
+    p.add_argument("--run_setup",         default="false",
                    help="'true' to create schemas and external tables before ingestion")
     return p.parse_args()
 

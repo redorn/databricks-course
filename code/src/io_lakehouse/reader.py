@@ -44,8 +44,14 @@ def read_landing(spark: SparkSession, cfg: EntityConfig, s3_base: str) -> DataFr
 
     df = reader.format(cfg.file_format).load(path)
 
+    # Rename columns for headerless CSVs when column names are provided
+    if cfg.columns and not cfg.header:
+        for i, col_name in enumerate(cfg.columns):
+            df = df.withColumnRenamed(f"_c{i}", col_name)
+
     return (
         df
-        .withColumn("_source_file", F.input_file_name().cast(StringType()))
+        .withColumn("_source_file",
+                    F.col("_metadata.file_path").cast(StringType()))
         .withColumn("_ingestion_timestamp", F.current_timestamp())
     )

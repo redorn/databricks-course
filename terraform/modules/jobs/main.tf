@@ -1,3 +1,11 @@
+terraform {
+  required_providers {
+    databricks = {
+      source = "databricks/databricks"
+    }
+  }
+}
+
 locals {
   wheel_src_dir = "${path.module}/../../../code/src"
   wheel_version = "0.1.0"
@@ -7,7 +15,6 @@ locals {
 }
 
 # ── Build the Python wheel locally ────────────────────────────────────────────
-# Triggers a rebuild whenever any source Python file changes.
 resource "null_resource" "build_wheel" {
   triggers = {
     src_hash = sha256(join("||", [
@@ -17,25 +24,28 @@ resource "null_resource" "build_wheel" {
   }
 
   provisioner "local-exec" {
-    command     = "pip wheel . --no-deps -w dist --quiet"
+    command     = "${pathexpand("~")}/.pyenv/versions/3.11.9/bin/pip wheel . --no-deps -w dist --quiet"
     working_dir = local.wheel_src_dir
   }
 }
 
 # ── Upload wheel to Unity Catalog Volume ──────────────────────────────────────
-# Uses databricks_file (not deprecated databricks_dbfs_file).
-# Serverless compute can only read from /Volumes/ and /Workspace/ – not DBFS.
 resource "databricks_file" "wheel" {
   depends_on = [null_resource.build_wheel]
   source     = local.wheel_local
   path       = local.wheel_remote
+
+  lifecycle {
+    replace_triggered_by = [null_resource.build_wheel.id]
+  }
 }
 
-# ── Parameterized ingestion job (serverless) ──────────────────────────────────
-resource "databricks_job" "raw_ingestion" {
-  name = "io-lakehouse-raw-ingestion-${var.environment}"
+# ══════════════════════════════════════════════════════════════════════════════
+# Job 1: Batch ingestion (Python wheel – setup + MERGE INTO)
+# ══════════════════════════════════════════════════════════════════════════════
+resource "databricks_job" "batch_ingestion" {
+  name = "io-lakehouse-batch-ingestion-${var.environment}"
 
-  # ── Job-level parameters (overridable per run) ──────────────────────────────
   parameter {
     name    = "catalog"
     default = var.catalog
@@ -54,59 +64,61 @@ resource "databricks_job" "raw_ingestion" {
   }
   parameter {
     name    = "source_filter"
-    default = ""   # empty = all source systems
+    default = ""
   }
   parameter {
     name    = "entity_filter"
-    default = ""   # empty = all entities
+    default = ""
   }
   parameter {
     name    = "run_setup"
-    default = "false"   # set "true" on first run per environment
+    default = "false"
   }
 
-  # ── Serverless environment: installs the wheel before the task runs ─────────
-  # For serverless compute, libraries are declared here (NOT in task.libraries).
   environment {
     environment_key = "default"
     spec {
-      client = "1"
-      dependencies = [
-        # Wheel is read from the UC volume uploaded above
-        databricks_file.wheel.path,
-      ]
+      client       = "2"
+      dependencies = [databricks_file.wheel.path]
     }
   }
 
-  # ── Task 1: Setup + batch ingestion (python_wheel_task, serverless) ─────────
   task {
     task_key        = "setup_and_ingest"
-    environment_key = "default"   # links to the environment block above
-    # No new_cluster / existing_cluster_id / job_cluster_key → serverless compute
+    environment_key = "default"
 
     python_wheel_task {
       package_name = "io_lakehouse"
       entry_point  = "io-lakehouse-ingest"
 
       named_parameters = {
-        catalog           = "{{job.parameters.catalog}}"
-        s3-landing-path   = "{{job.parameters.s3_landing_path}}"
-        raw-schema        = "{{job.parameters.raw_schema}}"
-        landing-schema    = "{{job.parameters.landing_schema}}"
-        source-filter     = "{{job.parameters.source_filter}}"
-        entity-filter     = "{{job.parameters.entity_filter}}"
-        run-setup         = "{{job.parameters.run_setup}}"
+        catalog          = "{{job.parameters.catalog}}"
+        s3_landing_path  = "{{job.parameters.s3_landing_path}}"
+        raw_schema       = "{{job.parameters.raw_schema}}"
+        landing_schema   = "{{job.parameters.landing_schema}}"
+        source_filter    = "{{job.parameters.source_filter}}"
+        entity_filter    = "{{job.parameters.entity_filter}}"
+        run_setup        = "{{job.parameters.run_setup}}"
       }
     }
   }
 
-  # ── Task 2: Trigger DLT pipeline ─────────────────────────────────────────────
+  tags = {
+    environment = var.environment
+    project     = "io-lakehouse"
+    layer       = "raw"
+    mode        = "batch"
+  }
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Job 2: DLT pipeline ingestion (Auto Loader + APPLY CHANGES)
+# ══════════════════════════════════════════════════════════════════════════════
+resource "databricks_job" "dlt_ingestion" {
+  name = "io-lakehouse-dlt-ingestion-${var.environment}"
+
   task {
     task_key = "run_pipeline"
-
-    depends_on {
-      task_key = "setup_and_ingest"
-    }
 
     pipeline_task {
       pipeline_id  = var.pipeline_id
@@ -118,5 +130,6 @@ resource "databricks_job" "raw_ingestion" {
     environment = var.environment
     project     = "io-lakehouse"
     layer       = "raw"
+    mode        = "dlt"
   }
 }

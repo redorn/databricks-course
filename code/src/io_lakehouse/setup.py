@@ -56,6 +56,17 @@ def run_setup(
         f"COMMENT 'Raw Delta tables – upserted from the landing zone'"
     )
 
+    # External tables require a cloud storage scheme (s3://, abfss://, gs://).
+    # UC Volume paths (/Volumes/...) don't support CREATE EXTERNAL TABLE —
+    # the batch job reads directly from the Volume via spark.read instead.
+    if base.startswith("/Volumes"):
+        logger.info(
+            "Landing path is a UC Volume (%s) – skipping external table "
+            "creation (spark.read will access files directly).", base,
+        )
+        logger.info("Setup complete – schemas created, external tables skipped.")
+        return
+
     configs = [
         cfg for cfg in _STRUCTURED
         if not source_filter or cfg.source == source_filter
